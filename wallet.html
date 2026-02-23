@@ -1,0 +1,679 @@
+{% extends "base.html" %}
+
+{% block title %}My Wallet - Cryptocurrency Wallet{% endblock %}
+
+{% block content %}
+<div class="wallet-header">
+    <h1>💼 My Crypto Wallet</h1>
+    <div class="wallet-address" id="walletAddressDisplay">{{ address }}</div>
+    <div class="realtime-indicator">
+        <span>⚡ Real-time updates enabled</span>
+    </div>
+</div>
+
+<!-- Balance and Stats Grid -->
+<div class="wallet-grid">
+    <!-- Balance Card -->
+    <div class="card balance-card">
+        <div class="card-header">
+            <h2>💰 Current Balance</h2>
+        </div>
+        <div class="card-body">
+            <div class="balance-label">Available Balance</div>
+            <div class="balance-amount" id="balanceAmount">{{ balance }}</div>
+            <div style="opacity: 0.9; font-size: 0.9rem;">COIN</div>
+        </div>
+    </div>
+
+    <!-- Quick Stats Card -->
+    <div class="card stats-card">
+        <div class="card-header">
+            <h2>📊 Quick Stats</h2>
+        </div>
+        <div class="card-body">
+            <div class="stat-item">
+                <span class="stat-label">Total Transactions</span>
+                <span class="stat-value" id="totalTransactions">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Total Sent</span>
+                <span class="stat-value" id="totalSent">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Total Received</span>
+                <span class="stat-value" id="totalReceived">0</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Features Section -->
+<div class="enhanced-features">
+    <div class="card">
+        <div class="card-header">
+            <h2>🔒 Enhanced Features</h2>
+        </div>
+        <div class="card-body">
+            <div class="feature-buttons">
+                <button onclick="showQRCode()" class="btn btn-secondary">
+                    📱 Show QR Code
+                </button>
+                <button onclick="exportTransactions('csv')" class="btn btn-secondary">
+                    📄 Export CSV
+                </button>
+                <button onclick="exportTransactions('pdf')" class="btn btn-secondary">
+                    📑 Export PDF
+                </button>
+                <button onclick="enable2FA()" class="btn btn-secondary">
+                    🔐 Enable 2FA
+                </button>
+                <button onclick="backupWallet()" class="btn btn-secondary">
+                    💾 Backup Wallet
+                </button>
+                <button onclick="showExchangeRates()" class="btn btn-secondary">
+                    💱 Exchange Rates
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Send Transaction Form -->
+<div class="card">
+    <div class="card-header">
+        <h2>📤 Send Cryptocurrency</h2>
+    </div>
+    <div class="card-body">
+        <form id="sendForm">
+            <div class="form-group">
+                <label for="recipientAddress">Recipient Address</label>
+                <input 
+                    type="text" 
+                    id="recipientAddress" 
+                    name="recipientAddress" 
+                    class="form-control" 
+                    placeholder="0x..."
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">Amount</label>
+                <input 
+                    type="number" 
+                    id="amount" 
+                    name="amount" 
+                    class="form-control" 
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="privateKey">Your Private Key</label>
+                <input 
+                    type="password" 
+                    id="privateKey" 
+                    name="privateKey" 
+                    class="form-control" 
+                    placeholder="Enter your private key to authorize transaction"
+                    required
+                >
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-block">Send Transaction</button>
+        </form>
+    </div>
+</div>
+
+<!-- Recent Transactions -->
+<div class="card">
+    <div class="card-header">
+        <h2>📜 Recent Transactions</h2>
+    </div>
+    <div class="card-body">
+        <div class="actions-bar" style="margin-bottom: 1.5rem; display: flex; gap: 1rem;">
+            <button onclick="window.location.href='/transactions/{{ address }}'" class="btn btn-info btn-sm">
+                View All Transactions
+            </button>
+            <button onclick="loadTransactions()" class="btn btn-secondary btn-sm">
+                🔄 Refresh
+            </button>
+        </div>
+        <div id="transactionsList" class="transactions-table">
+            <div class="loading-text">Loading transactions...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Notification Container -->
+<div id="notificationContainer"></div>
+
+<!-- Modal Template (Hidden by default) -->
+<div id="genericModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('genericModal')">&times;</span>
+        <div id="modalBody"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Add notification styles immediately
+    (function() {
+        const style = document.createElement('style');
+        style.id = 'notificationStyles';
+        style.textContent = '@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } } @keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } } #notificationContainer { position: fixed !important; top: 80px !important; right: 20px !important; z-index: 9999 !important; pointer-events: none !important; } #notificationContainer .notification { pointer-events: auto !important; }';
+        document.head.appendChild(style);
+    })();
+    
+    // Wallet address from server
+    const walletAddress = '{{ address }}';
+    const walletBalance = parseFloat('{{ balance }}');
+    
+    // Initialize WebSocket connection
+    const socket = io();
+    
+    // Subscribe to wallet updates when connected
+    socket.on('connect', function() {
+        console.log('WebSocket connected');
+        socket.emit('subscribe_wallet', {
+            wallet_address: walletAddress
+        });
+    });
+    
+    // Listen for balance updates
+    socket.on('balance_updated', function(data) {
+        console.log('Balance update received:', data);
+        if (data.wallet_address === walletAddress) {
+            document.getElementById('balanceAmount').textContent = data.balance.toFixed(2);
+            showNotification('Balance updated in real-time! 🔄', 'success');
+        }
+    });
+    
+    // Listen for new transactions
+    socket.on('new_transaction', function(data) {
+        console.log('New transaction received:', data);
+        if (data.wallet_address === walletAddress) {
+            loadTransactions();
+            showNotification('New transaction received! 💰', 'info');
+        }
+    });
+    
+    // Listen for connection errors
+    socket.on('connect_error', function(error) {
+        console.error('WebSocket connection error:', error);
+    });
+    
+    // Handle form submission
+    document.getElementById('sendForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const recipient = document.getElementById('recipientAddress').value.trim();
+        const amount = parseFloat(document.getElementById('amount').value);
+        const privateKey = document.getElementById('privateKey').value.trim();
+        
+        // Validation
+        if (!recipient || !amount || !privateKey) {
+            showNotification('Please fill in all fields', 'error');
+            return;
+        }
+        
+        if (amount <= 0) {
+            showNotification('Amount must be greater than 0', 'error');
+            return;
+        }
+        
+        if (amount > walletBalance) {
+            showNotification('Insufficient balance', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/send_transaction', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender_address: walletAddress,
+                    receiver_address: recipient,
+                    amount: amount,
+                    private_key: privateKey
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showNotification('Transaction sent successfully! ✅', 'success');
+                
+                // Clear form
+                document.getElementById('sendForm').reset();
+                
+                // Reload transactions
+                loadTransactions();
+                
+                // Update balance (WebSocket will also update it)
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                showNotification('Error: ' + data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Error sending transaction:', error);
+            showNotification('Failed to send transaction', 'error');
+        }
+    });
+    
+    // Load transactions
+    async function loadTransactions() {
+        try {
+            const response = await fetch(`/get_transactions/${walletAddress}?limit=5`);
+            const data = await response.json();
+            
+            if (data.success && data.data.length > 0) {
+                displayTransactions(data.data);
+                updateStats(data.data);
+            } else {
+                document.getElementById('transactionsList').innerHTML = 
+                    '<div class="no-data">No transactions yet</div>';
+            }
+        } catch (error) {
+            console.error('Error loading transactions:', error);
+            document.getElementById('transactionsList').innerHTML = 
+                '<div class="error-text">Failed to load transactions</div>';
+        }
+    }
+    
+    // Display transactions
+    function displayTransactions(transactions) {
+        const container = document.getElementById('transactionsList');
+        
+        if (transactions.length === 0) {
+            container.innerHTML = '<div class="no-data">No transactions yet</div>';
+            return;
+        }
+        
+        let html = '';
+        
+        transactions.forEach(tx => {
+            const isSent = tx.sender_address === walletAddress;
+            const icon = isSent ? '📤' : '📥';
+            const type = isSent ? 'Sent' : 'Received';
+            const amountClass = isSent ? 'sent' : 'received';
+            const amountSign = isSent ? '-' : '+';
+            const otherAddress = isSent ? tx.receiver_address : tx.sender_address;
+            const date = new Date(tx.timestamp).toLocaleString();
+            
+            html += `
+                <div class="transaction-row">
+                    <div class="tx-icon">${icon}</div>
+                    <div class="tx-details">
+                        <div class="tx-type">${type}</div>
+                        <div class="tx-address">${otherAddress}</div>
+                    </div>
+                    <div class="tx-amount ${amountClass}">
+                        ${amountSign}${tx.amount.toFixed(2)} COIN
+                    </div>
+                    <div class="tx-date">${date}</div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+    
+    // Update stats
+    function updateStats(transactions) {
+        const totalTx = transactions.length;
+        let totalSent = 0;
+        let totalReceived = 0;
+        
+        transactions.forEach(tx => {
+            if (tx.sender_address === walletAddress) {
+                totalSent += tx.amount;
+            } else {
+                totalReceived += tx.amount;
+            }
+        });
+        
+        document.getElementById('totalTransactions').textContent = totalTx;
+        document.getElementById('totalSent').textContent = totalSent.toFixed(2);
+        document.getElementById('totalReceived').textContent = totalReceived.toFixed(2);
+    }
+    
+    // Show notification
+    function showNotification(message, type = 'info') {
+        console.log(`[NOTIFICATION] ${type.toUpperCase()}: ${message}`); // Always log to console
+        
+        try {
+            // Get or create notification container
+            let container = document.getElementById('notificationContainer');
+            
+            if (!container) {
+                console.log('[NOTIFICATION] Creating container...');
+                container = document.createElement('div');
+                container.id = 'notificationContainer';
+                container.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 9999; pointer-events: none;';
+                document.body.appendChild(container);
+            }
+            
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.textContent = message;
+            
+            // Set all styles inline for guaranteed visibility
+            let backgroundColor;
+            switch(type) {
+                case 'success': backgroundColor = '#10b981'; break;
+                case 'error': backgroundColor = '#ef4444'; break;
+                case 'warning': backgroundColor = '#f59e0b'; break;
+                default: backgroundColor = '#3b82f6';
+            }
+            
+            notification.style.cssText = `
+                padding: 1rem 1.5rem;
+                margin-bottom: 10px;
+                border-radius: 0.5rem;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+                color: white;
+                font-weight: 500;
+                font-size: 0.95rem;
+                max-width: 350px;
+                word-wrap: break-word;
+                cursor: pointer;
+                pointer-events: auto;
+                background-color: ${backgroundColor};
+                animation: slideInRight 0.3s ease-out;
+                position: relative;
+                display: block;
+            `;
+            
+            // Click to dismiss
+            notification.onclick = function() {
+                removeNotification(notification);
+            };
+            
+            // Add to container
+            container.appendChild(notification);
+            console.log('[NOTIFICATION] Notification added to DOM');
+            
+            // Auto-remove after 4 seconds
+            setTimeout(() => {
+                removeNotification(notification);
+            }, 4000);
+            
+        } catch (error) {
+            console.error('[NOTIFICATION] Error showing notification:', error);
+            // Fallback: show alert
+            alert(message);
+        }
+    }
+    
+    // Helper to remove notification
+    function removeNotification(notification) {
+        if (notification && notification.parentNode) {
+            notification.style.animation = 'slideOutRight 0.3s ease-out';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }
+    }
+    
+    // ============= ENHANCED FEATURES =============
+    
+    // QR Code
+    async function showQRCode() {
+        try {
+            const response = await fetch(`/generate_qr/${walletAddress}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                showModal('Your Wallet QR Code', `
+                    <div style="text-align: center;">
+                        <img src="${data.qr_code}" alt="QR Code" style="max-width: 300px; margin: 1.5rem auto; display: block; padding: 1rem; background: white; border-radius: 0.5rem; box-shadow: var(--shadow);">
+                        <p style="font-size: 0.9rem; color: var(--text-secondary); word-break: break-all;">
+                            ${walletAddress}
+                        </p>
+                        <button onclick="copyToClipboard('${walletAddress}')" class="btn btn-primary" style="margin-top: 1rem;">
+                            📋 Copy Address
+                        </button>
+                    </div>
+                `);
+            } else {
+                showNotification('Failed to generate QR code', 'error');
+            }
+        } catch (error) {
+            console.error('Error generating QR code:', error);
+            showNotification('Failed to generate QR code', 'error');
+        }
+    }
+    
+    // Export transactions
+    function exportTransactions(format) {
+        window.location.href = `/export/${walletAddress}/${format}`;
+        showNotification(`Exporting transactions as ${format.toUpperCase()}...`, 'info');
+    }
+    
+    // Enable 2FA
+    async function enable2FA() {
+        try {
+            const response = await fetch('/enable_2fa', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({address: walletAddress})
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showModal('Enable Two-Factor Authentication', `
+                    <div style="text-align: center;">
+                        <p style="margin-bottom: 1rem;">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):</p>
+                        <img src="${data.data.qr_code}" alt="2FA QR Code" style="max-width: 300px; margin: 1rem auto; display: block;">
+                        <div style="background: #fff3cd; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;">
+                            <p style="font-weight: bold; margin-bottom: 0.5rem;">Secret Key:</p>
+                            <p style="font-family: monospace; font-size: 0.9rem;">${data.data.secret}</p>
+                        </div>
+                        <p style="color: var(--danger-color); margin-top: 1rem; font-weight: 600;">
+                            ⚠️ Save this secret key in a safe place!
+                        </p>
+                    </div>
+                `);
+            } else {
+                showNotification('Error: ' + data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Error enabling 2FA:', error);
+            showNotification('Failed to enable 2FA', 'error');
+        }
+    }
+    
+    // Backup wallet
+    async function backupWallet() {
+        const password = prompt('Enter a password for your backup encryption:');
+        if (!password) return;
+        
+        if (password.length < 8) {
+            showNotification('Password must be at least 8 characters', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/backup_wallet', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    address: walletAddress,
+                    password: password
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showModal('⚠️ SAVE YOUR BACKUP PHRASE!', `
+                    <div style="text-align: center;">
+                        <div style="background: #fff3cd; padding: 1.5rem; margin: 1.5rem 0; border-radius: 0.75rem; border: 2px solid var(--warning-color);">
+                            <p style="font-weight: bold; margin-bottom: 1rem; font-size: 1.1rem;">Your Mnemonic Backup Phrase:</p>
+                            <p style="font-size: 1.1rem; font-weight: bold; color: #000; line-height: 1.8;">
+                                ${data.data.mnemonic}
+                            </p>
+                        </div>
+                        <div style="background: #fee2e2; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                            <p style="color: var(--danger-color); font-weight: 600;">
+                                ⚠️ Write this down and keep it safe!<br>
+                                This is the ONLY way to recover your wallet!<br>
+                                Never share it with anyone!
+                            </p>
+                        </div>
+                        <button onclick="copyToClipboard('${data.data.mnemonic}')" class="btn btn-primary">
+                            📋 Copy to Clipboard
+                        </button>
+                    </div>
+                `);
+            } else {
+                showNotification('Error: ' + data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Error creating backup:', error);
+            showNotification('Failed to create backup', 'error');
+        }
+    }
+    
+    // Show exchange rates
+    async function showExchangeRates() {
+        try {
+            const response = await fetch('/exchange_rates?base=COIN');
+            const data = await response.json();
+            
+            if (data.success) {
+                let ratesHTML = '<div style="margin-top: 1rem;">';
+                ratesHTML += '<h3 style="margin-bottom: 1rem; text-align: center;">Exchange Rates (1 COIN =)</h3>';
+                ratesHTML += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">';
+                
+                for (let [currency, rate] of Object.entries(data.rates)) {
+                    ratesHTML += `
+                        <div style="background: var(--bg-color); padding: 1rem; border-radius: 0.5rem; text-align: center;">
+                            <div style="font-weight: bold; color: var(--primary-color); font-size: 1.2rem;">${currency}</div>
+                            <div style="font-size: 1.1rem; margin-top: 0.5rem;">${rate.toFixed(6)}</div>
+                        </div>
+                    `;
+                }
+                
+                ratesHTML += '</div></div>';
+                
+                showModal('💱 Exchange Rates', ratesHTML);
+            } else {
+                showNotification('Failed to fetch exchange rates', 'error');
+            }
+        } catch (error) {
+            console.error('Error fetching exchange rates:', error);
+            showNotification('Failed to fetch exchange rates', 'error');
+        }
+    }
+    
+    // Helper: Show modal
+    function showModal(title, content) {
+        const modal = document.getElementById('genericModal');
+        const modalBody = document.getElementById('modalBody');
+        
+        modalBody.innerHTML = `
+            <h2 style="margin-bottom: 1.5rem;">${title}</h2>
+            ${content}
+        `;
+        
+        modal.style.display = 'block';
+    }
+    
+    // Helper: Close modal
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+    
+    // Helper: Copy to clipboard
+    function copyToClipboard(text) {
+        console.log('[COPY] Starting copy process...');
+        console.log('[COPY] Text to copy:', text);
+        
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            console.log('[COPY] Using modern clipboard API');
+            navigator.clipboard.writeText(text).then(() => {
+                console.log('[COPY] Copy successful!');
+                console.log('[COPY] Calling showNotification...');
+                showNotification('Copied to clipboard! ✅', 'success');
+                console.log('[COPY] showNotification called');
+            }).catch(err => {
+                console.error('[COPY] Clipboard API failed:', err);
+                // Fallback to old method
+                fallbackCopyToClipboard(text);
+            });
+        } else {
+            console.log('[COPY] Modern API not available, using fallback');
+            // Use fallback for older browsers
+            fallbackCopyToClipboard(text);
+        }
+    }
+    
+    // Fallback copy method
+    function fallbackCopyToClipboard(text) {
+        console.log('[COPY FALLBACK] Starting fallback copy...');
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.opacity = '0';
+        
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        
+        try {
+            const successful = document.execCommand('copy');
+            console.log('[COPY FALLBACK] execCommand result:', successful);
+            if (successful) {
+                console.log('[COPY FALLBACK] Copy successful, calling showNotification...');
+                showNotification('Copied to clipboard! ✅', 'success');
+            } else {
+                console.log('[COPY FALLBACK] Copy failed');
+                showNotification('Failed to copy', 'error');
+            }
+        } catch (err) {
+            console.error('[COPY FALLBACK] Exception:', err);
+            showNotification('Failed to copy', 'error');
+        }
+        
+        document.body.removeChild(textarea);
+        console.log('[COPY FALLBACK] Cleanup complete');
+    }
+    
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('genericModal');
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    // Load transactions on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadTransactions();
+        
+        // TEST NOTIFICATION - Shows when page loads
+        setTimeout(() => {
+            showNotification('🎉 Wallet loaded successfully! Notifications are working!', 'success');
+        }, 1000);
+        
+        console.log('[WALLET] Page loaded, notification system initialized');
+    });
+</script>
+{% endblock %}

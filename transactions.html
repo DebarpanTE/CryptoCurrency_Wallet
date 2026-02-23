@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction History - {{ wallet.address[:10] }}...{% endblock %}
+
+{% block content %}
+<div class="wallet-header">
+    <h1>📜 Transaction History</h1>
+    <p class="wallet-address">{{ wallet.address }}</p>
+</div>
+
+<div class="actions-bar">
+    <a href="/wallet/{{ wallet.address }}" class="btn btn-secondary">
+        ← Back to Wallet
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>All Transactions</h2>
+    </div>
+    <div class="card-body">
+        {% if transactions %}
+            <div class="transactions-list">
+                {% for tx in transactions %}
+                    {% set is_sent = tx.sender_address == wallet.address %}
+                    <div class="transaction-item {% if is_sent %}sent{% else %}received{% endif %}">
+                        <div class="tx-header">
+                            <span class="tx-type-badge {% if is_sent %}badge-sent{% else %}badge-received{% endif %}">
+                                {% if is_sent %}📤 SENT{% else %}📥 RECEIVED{% endif %}
+                            </span>
+                            <span class="tx-date">{{ tx.timestamp }}</span>
+                        </div>
+                        
+                        <div class="tx-body">
+                            <div class="tx-row">
+                                <span class="tx-label">From:</span>
+                                <span class="tx-value">{{ tx.sender_address }}</span>
+                            </div>
+                            <div class="tx-row">
+                                <span class="tx-label">To:</span>
+                                <span class="tx-value">{{ tx.receiver_address }}</span>
+                            </div>
+                            <div class="tx-row">
+                                <span class="tx-label">Amount:</span>
+                                <span class="tx-value tx-amount {% if is_sent %}negative{% else %}positive{% endif %}">
+                                    {% if is_sent %}-{% else %}+{% endif %}{{ tx.amount }} coins
+                                </span>
+                            </div>
+                            <div class="tx-row">
+                                <span class="tx-label">Hash:</span>
+                                <span class="tx-value tx-hash">{{ tx.transaction_hash }}</span>
+                            </div>
+                            <div class="tx-row">
+                                <span class="tx-label">Status:</span>
+                                <span class="tx-value status-{{ tx.status }}">{{ tx.status.upper() }}</span>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="no-data">
+                <p>No transactions found for this wallet.</p>
+                <a href="/wallet/{{ wallet.address }}" class="btn btn-primary">
+                    Make Your First Transaction
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Add any transaction-specific JavaScript here
+</script>
+{% endblock %}
